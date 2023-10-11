@@ -35,6 +35,7 @@ import (
 
 	api "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -59,6 +60,7 @@ var (
 	testNamespace  string
 	netperfImage   string
 	cleanupOnly    bool
+	runCleanup     bool
 
 	everythingSelector metav1.ListOptions = metav1.ListOptions{}
 
@@ -81,6 +83,8 @@ func init() {
 		"Location of the kube configuration file ($HOME/.kube/config")
 	flag.BoolVar(&cleanupOnly, "cleanup", false,
 		"(boolean) Run the cleanup resources phase only (use this flag to clean up orphaned resources from a test run)")
+	flag.BoolVar(&runCleanup, "run-cleanup", true, "Run cleanup")
+
 	flag.IntVar(&testFrom, "testFrom", 0, "start from test number testFrom")
 	flag.IntVar(&testTo, "testTo", 5, "end at test number testTo")
 }
@@ -100,9 +104,12 @@ func setupClient() *kubernetes.Clientset {
 
 // getMinions : Only return schedulable/worker nodes
 func getMinionNodes(c *kubernetes.Clientset) *api.NodeList {
+	ls := metav1.LabelSelector{MatchLabels: map[string]string{"node.kubernetes.io/instance-type": "Standard_D8ds_v5"}}
+
 	nodes, err := c.CoreV1().Nodes().List(
 		metav1.ListOptions{
 			FieldSelector: "spec.unschedulable=false",
+			LabelSelector: labels.Set(ls.MatchLabels).String(),
 		})
 	if err != nil {
 		fmt.Println("Failed to fetch nodes", err)
@@ -265,8 +272,8 @@ func createRCs(c *kubernetes.Clientset) bool {
 							Ports: []api.ContainerPort{{ContainerPort: orchestratorPort}},
 							Args: []string{
 								"--mode=orchestrator",
-								fmt.Sprintf("--testFrom=%d", testFrom),
-								fmt.Sprintf("--testTo=%d", testTo),
+								// fmt.Sprintf("--testFrom=%d", testFrom),
+								// fmt.Sprintf("--testTo=%d", testTo),
 							},
 							ImagePullPolicy: "Always",
 						},
@@ -471,5 +478,7 @@ func main() {
 	secondaryNode = nodes.Items[1]
 	fmt.Printf("Selected primary,secondary nodes = (%s, %s)\n", primaryNode.GetName(), secondaryNode.GetName())
 	executeTests(c)
-	cleanup(c)
+	if runCleanup {
+		cleanup(c)
+	}
 }
